@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0c0c0a">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="logo.png" type="image/png">
+<link rel="apple-touch-icon" href="logo.png">
+<title>ThermalGuard</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0c0c0a;--surface:#161614;--surface2:#1e1e1b;--surface3:#282825;
+  --border:#2e2e2a;--border2:#3a3a35;
+  --text:#eae8e0;--text2:#a09d94;--text3:#636058;
+  --green:#2ecc71;--green-glow:rgba(46,204,113,0.25);--green-bg:rgba(46,204,113,0.08);
+  --red:#e74c3c;--red-glow:rgba(231,76,60,0.3);--red-bg:rgba(231,76,60,0.08);
+  --amber:#f0a030;--amber-bg:rgba(240,160,48,0.08);
+  --blue:#5dade2;--blue-bg:rgba(93,173,226,0.08);
+  --mono:'JetBrains Mono',monospace;
+  --sans:'Outfit',system-ui,sans-serif;
+  --safe-t:env(safe-area-inset-top,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+}
+html,body{height:100%;overflow-x:hidden}
+body{
+  font-family:var(--sans);background:var(--bg);color:var(--text);
+  padding:0;min-height:100vh;
+}
+
+/* Header */
+.header{
+  padding:calc(var(--safe-t) + 16px) 20px 12px;
+  display:flex;justify-content:space-between;align-items:center;
+  position:sticky;top:0;background:rgba(12,12,10,0.9);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  z-index:10;border-bottom:1px solid var(--border);
+}
+.logo{font-size:1.1rem;font-weight:700;letter-spacing:-0.03em}
+.logo span{color:var(--green)}
+.conn-badge{
+  display:flex;align-items:center;gap:6px;
+  font-size:0.75rem;font-family:var(--mono);color:var(--text3);
+  padding:4px 10px;border-radius:20px;background:var(--surface2);border:1px solid var(--border);
+}
+.conn-dot{width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0}
+.conn-dot.live{background:var(--green);box-shadow:0 0 6px var(--green-glow)}
+
+/* Main content */
+.content{padding:16px 16px calc(var(--safe-b) + 24px)}
+
+/* Alert banner */
+.alert-banner{
+  display:none;padding:14px 16px;border-radius:12px;margin-bottom:16px;
+  background:var(--red-bg);border:1px solid rgba(231,76,60,0.2);
+  font-size:0.85rem;font-weight:500;color:#f09595;
+  animation:pulse-red 1s ease-in-out infinite;
+}
+.alert-banner.active{display:flex;align-items:center;gap:10px}
+.alert-banner .icon{font-size:1.2rem;flex-shrink:0}
+@keyframes pulse-red{
+  0%,100%{opacity:1}
+  50%{opacity:0.7}
+}
+
+/* Status OK banner */
+.status-ok{
+  padding:14px 16px;border-radius:12px;margin-bottom:16px;
+  background:var(--green-bg);border:1px solid rgba(46,204,113,0.15);
+  font-size:0.85rem;font-weight:500;color:#5fe8a0;
+  display:flex;align-items:center;gap:10px;
+}
+.status-ok .icon{font-size:1.2rem}
+
+/* Temp cards */
+.temp-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;
+}
+.temp-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:16px;position:relative;overflow:hidden;
+}
+.temp-card.ambient{grid-column:1/-1}
+.temp-card .label{
+  font-size:0.7rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--text3);margin-bottom:8px;
+}
+.temp-card .value{
+  font-family:var(--mono);font-size:2rem;font-weight:600;
+  letter-spacing:-0.04em;line-height:1;
+}
+.temp-card .unit{font-size:1rem;font-weight:400;color:var(--text2);margin-left:2px}
+.temp-card .delta{
+  font-family:var(--mono);font-size:0.75rem;color:var(--text3);margin-top:6px;
+}
+.temp-card .delta.warn{color:var(--amber)}
+.temp-card .delta.alert{color:#f09595}
+.temp-card.alert-active{border-color:rgba(231,76,60,0.3);background:rgba(231,76,60,0.03)}
+.temp-card .bar{
+  position:absolute;bottom:0;left:0;right:0;height:3px;
+  background:var(--green);transition:background 0.3s;
+}
+.temp-card.alert-active .bar{background:var(--red)}
+
+/* Chart section */
+.chart-section{
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:16px;margin-bottom:16px;
+}
+.chart-header{
+  display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;
+}
+.chart-title{font-size:0.8rem;font-weight:600;color:var(--text2)}
+.chart-badge{
+  font-family:var(--mono);font-size:0.65rem;color:var(--text3);
+  padding:3px 8px;border-radius:8px;background:var(--surface2);
+}
+.chart-wrap{height:220px;position:relative;overflow:hidden}
+
+/* Info bar */
+.info-bar{
+  display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px;
+}
+.info-item{
+  background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  padding:12px;text-align:center;
+}
+.info-item .lbl{font-size:0.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px}
+.info-item .val{font-family:var(--mono);font-size:0.85rem;font-weight:500}
+
+/* Last updated */
+.last-update{
+  text-align:center;font-size:0.7rem;color:var(--text3);
+  font-family:var(--mono);padding:8px 0;
+}
+
+/* Waiting state */
+.waiting{
+  text-align:center;padding:60px 20px;color:var(--text3);
+}
+.waiting .spinner{
+  width:32px;height:32px;border:3px solid var(--border2);
+  border-top-color:var(--green);border-radius:50%;
+  animation:spin 0.8s linear infinite;margin:0 auto 16px;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.waiting p{font-size:0.85rem;line-height:1.5}
+
+/* Positronic branding footer */
+.brand-footer{
+  text-align:center;padding:20px;font-size:0.65rem;
+  color:var(--text3);letter-spacing:0.05em;
+}
+
+/* Notification button */
+.notif-btn{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  width:100%;padding:12px;border-radius:10px;border:1px solid var(--border);
+  background:var(--surface);color:var(--text2);font-family:var(--sans);
+  font-size:0.8rem;font-weight:500;cursor:pointer;margin-bottom:16px;
+  transition:background 0.2s,border-color 0.2s;
+}
+.notif-btn:hover{background:var(--surface2);border-color:var(--border2)}
+.notif-btn.granted{
+  background:var(--green-bg);border-color:rgba(46,204,113,0.2);color:#5fe8a0;
+  cursor:default;
+}
+.notif-btn .btn-icon{font-size:1rem}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo" style="display:flex;align-items:center;gap:8px">
+    <img src="logo.png" alt="ThermalGuard" style="height:28px;width:28px;border-radius:6px">
+    <span>Thermal<span style="color:var(--green)">Guard</span></span>
+  </div>
+  <div class="conn-badge">
+    <div class="conn-dot" id="connDot"></div>
+    <span id="connText">Connecting...</span>
+  </div>
+</div>
+
+<div class="content">
+  <!-- Shown while waiting for first data -->
+  <div class="waiting" id="waitingState">
+    <div class="spinner"></div>
+    <p>Waiting for sensor data...<br>Make sure the backshell unit is powered on.</p>
+  </div>
+
+  <!-- Main dashboard (hidden until data arrives) -->
+  <div id="dashboard" style="display:none">
+
+    <!-- Alert banner -->
+    <div class="alert-banner" id="alertBanner">
+      <span class="icon">⚠</span>
+      <span id="alertText">Temperature threshold exceeded!</span>
+    </div>
+
+    <!-- Status OK -->
+    <div class="status-ok" id="statusOk">
+      <span class="icon">✓</span>
+      <span>All sensors within normal range</span>
+    </div>
+
+    <!-- Temperature cards -->
+    <div class="temp-grid">
+      <div class="temp-card" id="card1">
+        <div class="label">Sensor 1</div>
+        <div class="value"><span id="temp1">--</span><span class="unit">°C</span></div>
+        <div class="delta" id="delta1">Δ --</div>
+        <div class="bar"></div>
+      </div>
+      <div class="temp-card" id="card2">
+        <div class="label">Sensor 2</div>
+        <div class="value"><span id="temp2">--</span><span class="unit">°C</span></div>
+        <div class="delta" id="delta2">Δ --</div>
+        <div class="bar"></div>
+      </div>
+      <div class="temp-card ambient">
+        <div class="label">Ambient Reference</div>
+        <div class="value"><span id="tempAmb">--</span><span class="unit">°C</span></div>
+        <div class="bar" style="background:var(--blue)"></div>
+      </div>
+    </div>
+
+    <!-- Chart -->
+    <div class="chart-section">
+      <div class="chart-header">
+        <div class="chart-title">Temperature History</div>
+        <div class="chart-badge" id="chartPoints">0 pts</div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Info bar -->
+    <div class="info-bar" style="grid-template-columns:1fr">
+      <div class="info-item">
+        <div class="lbl">Threshold</div>
+        <div class="val" id="threshVal">--°C</div>
+      </div>
+    </div>
+
+    <!-- Last update -->
+    <div class="last-update">Last update: <span id="lastTime">--</span></div>
+
+    <!-- Notification enable -->
+    <button class="notif-btn" id="notifBtn" onclick="enableNotifications()">
+      <span class="btn-icon">🔔</span>
+      <span id="notifBtnText">Enable Alert Notifications</span>
+    </button>
+  </div>
+
+  <div class="brand-footer">THERMALGUARD ENGINEERING × POSITRONIC × MISSOURI S&T</div>
+</div>
+
+<script>
+// ============================================================
+// CONFIGURATION
+// ============================================================
+
+const BROKER_URL = 'wss://c6a0b8ad187b42dc9ab038e5922a2eee.s1.eu.hivemq.cloud:8884/mqtt';
+const MQTT_USER = 'ESP32';
+const MQTT_PASS = 'MSTGrad2026!';
+const MQTT_TOPIC = 'positronic/backshell_1/data';
+
+// Chart data retention (max points shown)
+const MAX_POINTS = 120;
+
+// ============================================================
+// STATE
+// ============================================================
+
+let chart = null;
+let readingsCount = 0;
+let alertsCount = 0;
+let wasAlerting = false;
+let notifCooldown = false;
+const history = { labels: [], sensor1: [], sensor2: [], ambient: [] };
+
+// ============================================================
+// DOM REFS
+// ============================================================
+
+const $ = id => document.getElementById(id);
+
+// ============================================================
+// CHART SETUP
+// ============================================================
+
+function initChart() {
+  const ctx = $('chart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: history.labels,
+      datasets: [
+        {
+          label: 'Sensor 1',
+          data: history.sensor1,
+          borderColor: '#2ecc71',
+          backgroundColor: 'rgba(46,204,113,0.08)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 0,
+          borderWidth: 2
+        },
+        {
+          label: 'Sensor 2',
+          data: history.sensor2,
+          borderColor: '#f0a030',
+          backgroundColor: 'rgba(240,160,48,0.08)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 0,
+          borderWidth: 2
+        },
+        {
+          label: 'Ambient',
+          data: history.ambient,
+          borderColor: '#5dade2',
+          backgroundColor: 'rgba(93,173,226,0.05)',
+          fill: false,
+          tension: 0.3,
+          pointRadius: 0,
+          borderWidth: 1.5,
+          borderDash: [6, 3]
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 300 },
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            boxWidth: 10,
+            padding: 12,
+            font: { size: 11, family: 'Outfit' },
+            color: '#636058'
+          }
+        }
+      },
+      scales: {
+        x: {
+          display: true,
+          grid: { display: false },
+          ticks: {
+            maxTicksLimit: 5,
+            color: '#636058',
+            font: { size: 10, family: 'JetBrains Mono' }
+          }
+        },
+        y: {
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: {
+            callback: v => v.toFixed(1) + '°',
+            maxTicksLimit: 5,
+            color: '#636058',
+            font: { size: 10, family: 'JetBrains Mono' }
+          }
+        }
+      },
+      interaction: { intersect: false, mode: 'index' }
+    }
+  });
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+function enableNotifications() {
+  if (!('Notification' in window)) {
+    $('notifBtnText').textContent = 'Notifications not supported';
+    return;
+  }
+  if (Notification.permission === 'granted') {
+    updateNotifButton('granted');
+    return;
+  }
+  Notification.requestPermission().then(p => {
+    updateNotifButton(p);
+  });
+}
+
+function updateNotifButton(permission) {
+  const btn = $('notifBtn');
+  const txt = $('notifBtnText');
+  if (permission === 'granted') {
+    btn.classList.add('granted');
+    txt.textContent = 'Notifications Enabled ✓';
+    btn.onclick = null;
+  } else if (permission === 'denied') {
+    txt.textContent = 'Notifications Blocked — Check Browser Settings';
+    btn.style.opacity = '0.5';
+    btn.onclick = null;
+  }
+}
+
+function checkNotifStatus() {
+  if ('Notification' in window && Notification.permission === 'granted') {
+    updateNotifButton('granted');
+  }
+}
+}
+
+function sendAlertNotification(sensorNames, maxExceedance) {
+  // Only fire on transition from OK -> alert, with a 10s cooldown
+  if (wasAlerting || notifCooldown) return;
+  notifCooldown = true;
+  setTimeout(() => { notifCooldown = false; }, 10000);
+
+  if ('Notification' in window && Notification.permission === 'granted') {
+    const notif = new Notification('⚠ ThermalGuard Alert', {
+      body: sensorNames + ' exceeded threshold by ' + maxExceedance.toFixed(1) + '°C',
+      icon: './logo.png',
+      tag: 'thermal-alert',
+      renotify: true,
+      requireInteraction: true
+    });
+    // Auto-close after 15 seconds
+    setTimeout(() => notif.close(), 15000);
+  }
+}
+
+// ============================================================
+// UPDATE UI
+// ============================================================
+
+function updateUI(data) {
+  const { sensor1, sensor2, ambient, alert: isAlert, threshold } = data;
+
+  // Show dashboard, hide waiting
+  $('waitingState').style.display = 'none';
+  $('dashboard').style.display = 'block';
+
+  // Update temperature values
+  $('temp1').textContent = sensor1.toFixed(2);
+  $('temp2').textContent = sensor2.toFixed(2);
+  $('tempAmb').textContent = ambient.toFixed(2);
+
+  // Calculate deltas
+  const d1 = sensor1 - ambient;
+  const d2 = sensor2 - ambient;
+
+  $('delta1').textContent = 'Δ ' + (d1 >= 0 ? '+' : '') + d1.toFixed(2) + '°C';
+  $('delta2').textContent = 'Δ ' + (d2 >= 0 ? '+' : '') + d2.toFixed(2) + '°C';
+
+  // Delta color classes
+  const setDeltaClass = (el, delta, thresh) => {
+    el.className = 'delta';
+    if (delta >= thresh) el.classList.add('alert');
+    else if (delta >= thresh * 0.7) el.classList.add('warn');
+  };
+  setDeltaClass($('delta1'), d1, threshold);
+  setDeltaClass($('delta2'), d2, threshold);
+
+  // Card alert styling
+  $('card1').classList.toggle('alert-active', d1 >= threshold);
+  $('card2').classList.toggle('alert-active', d2 >= threshold);
+
+  // Alert banner vs OK status
+  if (isAlert) {
+    $('alertBanner').classList.add('active');
+    $('statusOk').style.display = 'none';
+    alertsCount++;
+    const which = [];
+    if (d1 >= threshold) which.push('Sensor 1');
+    if (d2 >= threshold) which.push('Sensor 2');
+    const maxExceed = Math.max(d1 - threshold, d2 - threshold);
+    $('alertText').textContent = which.join(' & ') + ' exceeded threshold by ' +
+      maxExceed.toFixed(1) + '°C!';
+
+    // Fire notification on transition
+    sendAlertNotification(which.join(' & '), maxExceed);
+  } else {
+    $('alertBanner').classList.remove('active');
+    $('statusOk').style.display = 'flex';
+  }
+
+  // Track alert state for transition detection
+  wasAlerting = isAlert;
+
+  // Info bar
+  $('threshVal').textContent = threshold.toFixed(0) + '°C';
+
+  // Timestamp
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  const timeStr = hh + ':' + mm + ':' + ss;
+  $('lastTime').textContent = timeStr;
+
+  // Update chart
+  history.labels.push(timeStr);
+  history.sensor1.push(sensor1);
+  history.sensor2.push(sensor2);
+  history.ambient.push(ambient);
+
+  // Trim to max points
+  if (history.labels.length > MAX_POINTS) {
+    history.labels.shift();
+    history.sensor1.shift();
+    history.sensor2.shift();
+    history.ambient.shift();
+  }
+
+  $('chartPoints').textContent = history.labels.length + ' pts';
+  chart.update();
+}
+
+// ============================================================
+// MQTT CONNECTION
+// ============================================================
+
+function connectMQTT() {
+  $('connText').textContent = 'Connecting...';
+  $('connDot').classList.remove('live');
+
+  const client = mqtt.connect(BROKER_URL, {
+    username: MQTT_USER,
+    password: MQTT_PASS,
+    clientId: 'thermalguard_' + Math.random().toString(16).slice(2, 8),
+    clean: true,
+    reconnectPeriod: 3000,
+    connectTimeout: 10000
+  });
+
+  client.on('connect', () => {
+    console.log('MQTT connected');
+    $('connText').textContent = 'Live';
+    $('connDot').classList.add('live');
+
+    client.subscribe(MQTT_TOPIC, { qos: 0 }, (err) => {
+      if (err) {
+        console.error('Subscribe error:', err);
+      } else {
+        console.log('Subscribed to:', MQTT_TOPIC);
+      }
+    });
+  });
+
+  client.on('message', (topic, message) => {
+    try {
+      const data = JSON.parse(message.toString());
+      updateUI(data);
+    } catch (e) {
+      console.error('Parse error:', e);
+    }
+  });
+
+  client.on('error', (err) => {
+    console.error('MQTT error:', err);
+    $('connText').textContent = 'Error';
+    $('connDot').classList.remove('live');
+  });
+
+  client.on('close', () => {
+    $('connText').textContent = 'Reconnecting...';
+    $('connDot').classList.remove('live');
+  });
+
+  client.on('reconnect', () => {
+    $('connText').textContent = 'Reconnecting...';
+  });
+}
+
+// ============================================================
+// INIT
+// ============================================================
+
+document.addEventListener('DOMContentLoaded', () => {
+  initChart();
+  connectMQTT();
+  checkNotifStatus();
+
+  // Register service worker for PWA
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').then(() => {
+      console.log('Service worker registered');
+    }).catch(err => {
+      console.log('SW registration failed:', err);
+    });
+  }
+});
+</script>
+
+</body>
+</html>
