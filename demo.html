@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>ThermalGuard — Demo</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0c0c0a;--surface:#161614;--surface2:#1e1e1b;--surface3:#282825;
+  --border:#2e2e2a;--border2:#3a3a35;
+  --text:#eae8e0;--text2:#a09d94;--text3:#636058;
+  --green:#2ecc71;--green-glow:rgba(46,204,113,0.25);--green-bg:rgba(46,204,113,0.08);
+  --red:#e74c3c;--red-glow:rgba(231,76,60,0.3);--red-bg:rgba(231,76,60,0.08);
+  --amber:#f0a030;--amber-bg:rgba(240,160,48,0.08);
+  --blue:#5dade2;--blue-bg:rgba(93,173,226,0.08);
+  --mono:'JetBrains Mono',monospace;
+  --sans:'Outfit',system-ui,sans-serif;
+  --safe-t:env(safe-area-inset-top,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+}
+html,body{height:100%;overflow-x:hidden}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);padding:0;min-height:100vh}
+
+.header{
+  padding:calc(var(--safe-t) + 16px) 20px 12px;
+  display:flex;justify-content:space-between;align-items:center;
+  position:sticky;top:0;background:rgba(12,12,10,0.9);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  z-index:10;border-bottom:1px solid var(--border);
+}
+.logo{font-size:1.1rem;font-weight:700;letter-spacing:-0.03em}
+.logo span{color:var(--green)}
+.conn-badge{
+  display:flex;align-items:center;gap:6px;
+  font-size:0.75rem;font-family:var(--mono);color:var(--text3);
+  padding:4px 10px;border-radius:20px;background:var(--surface2);border:1px solid var(--border);
+}
+.conn-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--green);box-shadow:0 0 6px var(--green-glow)}
+
+.demo-badge{
+  position:fixed;top:calc(var(--safe-t) + 60px);left:50%;transform:translateX(-50%);
+  background:var(--amber);color:#0c0c0a;font-size:0.65rem;font-weight:700;
+  letter-spacing:0.1em;text-transform:uppercase;padding:4px 14px;border-radius:20px;
+  z-index:20;
+}
+
+.content{padding:16px 16px calc(var(--safe-b) + 24px)}
+
+.alert-banner{
+  display:none;padding:14px 16px;border-radius:12px;margin-bottom:16px;
+  background:var(--red-bg);border:1px solid rgba(231,76,60,0.2);
+  font-size:0.85rem;font-weight:500;color:#f09595;
+  animation:pulse-red 1s ease-in-out infinite;
+}
+.alert-banner.active{display:flex;align-items:center;gap:10px}
+.alert-banner .icon{font-size:1.2rem;flex-shrink:0}
+@keyframes pulse-red{0%,100%{opacity:1}50%{opacity:0.7}}
+
+.status-ok{
+  padding:14px 16px;border-radius:12px;margin-bottom:16px;
+  background:var(--green-bg);border:1px solid rgba(46,204,113,0.15);
+  font-size:0.85rem;font-weight:500;color:#5fe8a0;
+  display:flex;align-items:center;gap:10px;
+}
+.status-ok .icon{font-size:1.2rem}
+
+.temp-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.temp-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:16px;position:relative;overflow:hidden;transition:border-color 0.3s,background 0.3s;
+}
+.temp-card.ambient{grid-column:1/-1}
+.temp-card .label{
+  font-size:0.7rem;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--text3);margin-bottom:8px;
+}
+.temp-card .value{font-family:var(--mono);font-size:2rem;font-weight:600;letter-spacing:-0.04em;line-height:1}
+.temp-card .unit{font-size:1rem;font-weight:400;color:var(--text2);margin-left:2px}
+.temp-card .delta{font-family:var(--mono);font-size:0.75rem;color:var(--text3);margin-top:6px}
+.temp-card .delta.warn{color:var(--amber)}
+.temp-card .delta.alert{color:#f09595}
+.temp-card.alert-active{border-color:rgba(231,76,60,0.3);background:rgba(231,76,60,0.03)}
+.temp-card .bar{position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--green);transition:background 0.3s}
+.temp-card.alert-active .bar{background:var(--red)}
+
+.chart-section{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px}
+.chart-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.chart-title{font-size:0.8rem;font-weight:600;color:var(--text2)}
+.chart-badge{font-family:var(--mono);font-size:0.65rem;color:var(--text3);padding:3px 8px;border-radius:8px;background:var(--surface2)}
+.chart-wrap{height:220px;position:relative;overflow:hidden}
+
+.info-bar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:16px}
+.info-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center}
+.info-item .lbl{font-size:0.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px}
+.info-item .val{font-family:var(--mono);font-size:0.85rem;font-weight:500}
+
+.last-update{text-align:center;font-size:0.7rem;color:var(--text3);font-family:var(--mono);padding:8px 0}
+.brand-footer{text-align:center;padding:20px;font-size:0.65rem;color:var(--text3);letter-spacing:0.05em}
+</style>
+</head>
+<body>
+
+<div class="demo-badge">Simulated Demo</div>
+
+<div class="header">
+  <div class="logo" style="display:flex;align-items:center;gap:10px">
+    <img src="logo.png" alt="ThermalGuard" style="height:36px;width:36px">
+    <span>Thermal<span style="color:var(--red)">Guard</span></span>
+  </div>
+  <div class="conn-badge">
+    <div class="conn-dot"></div>
+    <span>Demo</span>
+  </div>
+</div>
+
+<div class="content">
+  <div id="dashboard">
+    <div class="alert-banner" id="alertBanner">
+      <span class="icon">⚠</span>
+      <span id="alertText">Temperature threshold exceeded!</span>
+    </div>
+    <div class="status-ok" id="statusOk">
+      <span class="icon">✓</span>
+      <span>All sensors within normal range</span>
+    </div>
+    <div class="temp-grid">
+      <div class="temp-card" id="card1">
+        <div class="label">Sensor 1</div>
+        <div class="value"><span id="temp1">--</span><span class="unit">°C</span></div>
+        <div class="delta" id="delta1">Δ --</div>
+        <div class="bar"></div>
+      </div>
+      <div class="temp-card" id="card2">
+        <div class="label">Sensor 2</div>
+        <div class="value"><span id="temp2">--</span><span class="unit">°C</span></div>
+        <div class="delta" id="delta2">Δ --</div>
+        <div class="bar"></div>
+      </div>
+      <div class="temp-card ambient">
+        <div class="label">Ambient Reference</div>
+        <div class="value"><span id="tempAmb">--</span><span class="unit">°C</span></div>
+        <div class="bar" style="background:var(--blue)"></div>
+      </div>
+    </div>
+    <div class="chart-section">
+      <div class="chart-header">
+        <div class="chart-title">Temperature History</div>
+        <div class="chart-badge" id="chartPoints">0 pts</div>
+      </div>
+      <div class="chart-wrap"><canvas id="chart"></canvas></div>
+    </div>
+    <div class="info-bar" style="grid-template-columns:1fr">
+      <div class="info-item"><div class="lbl">Threshold</div><div class="val" id="threshVal">4°C</div></div>
+    </div>
+    <div class="last-update">Last update: <span id="lastTime">--</span></div>
+  </div>
+  <div class="brand-footer">THERMALGUARD ENGINEERING × POSITRONIC × MISSOURI S&T</div>
+</div>
+
+<script>
+const MAX_POINTS = 120;
+const THRESHOLD = 4.0;
+
+let chart = null;
+let readingsCount = 0;
+let alertsCount = 0;
+const history = { labels: [], sensor1: [], sensor2: [], ambient: [] };
+const $ = id => document.getElementById(id);
+
+// Simulation state
+let simTime = 0;
+let ambientBase = 23.5;
+let s1Base = 24.2;
+let s2Base = 24.0;
+
+function initChart() {
+  const ctx = $('chart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: history.labels,
+      datasets: [
+        { label: 'Sensor 1', data: history.sensor1, borderColor: '#2ecc71', backgroundColor: 'rgba(46,204,113,0.08)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 },
+        { label: 'Sensor 2', data: history.sensor2, borderColor: '#f0a030', backgroundColor: 'rgba(240,160,48,0.08)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 },
+        { label: 'Ambient', data: history.ambient, borderColor: '#5dade2', backgroundColor: 'rgba(93,173,226,0.05)', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5, borderDash: [6, 3] }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 300 },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12, font: { size: 11, family: 'Outfit' }, color: '#636058' } }
+      },
+      scales: {
+        x: { display: true, grid: { display: false }, ticks: { maxTicksLimit: 5, color: '#636058', font: { size: 10, family: 'JetBrains Mono' } } },
+        y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { callback: v => v.toFixed(1) + '°', maxTicksLimit: 5, color: '#636058', font: { size: 10, family: 'JetBrains Mono' } } }
+      },
+      interaction: { intersect: false, mode: 'index' }
+    }
+  });
+}
+
+function simulateData() {
+  simTime++;
+  const noise = () => (Math.random() - 0.5) * 0.3;
+
+  // Ambient drifts very slowly
+  ambientBase += (Math.random() - 0.5) * 0.02;
+  const ambient = ambientBase + noise() * 0.5;
+
+  // Sensor 1: gradual rise starting at t=15, crosses threshold around t=25
+  let s1Offset = 0;
+  if (simTime > 15 && simTime <= 40) {
+    s1Offset = (simTime - 15) * 0.28;
+  } else if (simTime > 40 && simTime <= 55) {
+    // Hold high
+    s1Offset = 7.0 + noise();
+  } else if (simTime > 55 && simTime <= 70) {
+    // Cool back down
+    s1Offset = 7.0 - (simTime - 55) * 0.47;
+    if (s1Offset < 0) s1Offset = 0;
+  } else if (simTime > 70) {
+    s1Offset = noise() * 0.5;
+  }
+
+  // Sensor 2: stays normal, slight rise later
+  let s2Offset = 0;
+  if (simTime > 50 && simTime <= 65) {
+    s2Offset = (simTime - 50) * 0.15;
+  } else if (simTime > 65 && simTime <= 80) {
+    s2Offset = 2.25 - (simTime - 65) * 0.15;
+    if (s2Offset < 0) s2Offset = 0;
+  }
+
+  const sensor1 = s1Base + s1Offset + noise();
+  const sensor2 = s2Base + s2Offset + noise();
+
+  // Reset cycle after 90 seconds
+  if (simTime > 90) {
+    simTime = 0;
+    s1Base = 24.0 + noise();
+    s2Base = 23.8 + noise();
+    ambientBase = 23.5 + noise();
+  }
+
+  return {
+    sensor1: parseFloat(sensor1.toFixed(2)),
+    sensor2: parseFloat(sensor2.toFixed(2)),
+    ambient: parseFloat(ambient.toFixed(2)),
+    alert: (sensor1 - ambient >= THRESHOLD) || (sensor2 - ambient >= THRESHOLD),
+    threshold: THRESHOLD
+  };
+}
+
+function updateUI(data) {
+  const { sensor1, sensor2, ambient, alert: isAlert, threshold } = data;
+
+  $('temp1').textContent = sensor1.toFixed(2);
+  $('temp2').textContent = sensor2.toFixed(2);
+  $('tempAmb').textContent = ambient.toFixed(2);
+
+  const d1 = sensor1 - ambient;
+  const d2 = sensor2 - ambient;
+
+  $('delta1').textContent = 'Δ ' + (d1 >= 0 ? '+' : '') + d1.toFixed(2) + '°C';
+  $('delta2').textContent = 'Δ ' + (d2 >= 0 ? '+' : '') + d2.toFixed(2) + '°C';
+
+  const setDeltaClass = (el, delta, thresh) => {
+    el.className = 'delta';
+    if (delta >= thresh) el.classList.add('alert');
+    else if (delta >= thresh * 0.7) el.classList.add('warn');
+  };
+  setDeltaClass($('delta1'), d1, threshold);
+  setDeltaClass($('delta2'), d2, threshold);
+
+  $('card1').classList.toggle('alert-active', d1 >= threshold);
+  $('card2').classList.toggle('alert-active', d2 >= threshold);
+
+  if (isAlert) {
+    $('alertBanner').classList.add('active');
+    $('statusOk').style.display = 'none';
+    alertsCount++;
+    const which = [];
+    if (d1 >= threshold) which.push('Sensor 1');
+    if (d2 >= threshold) which.push('Sensor 2');
+    const maxExceed = Math.max(d1 - threshold, d2 - threshold);
+    $('alertText').textContent = which.join(' & ') + ' exceeded threshold by ' + maxExceed.toFixed(1) + '°C!';
+  } else {
+    $('alertBanner').classList.remove('active');
+    $('statusOk').style.display = 'flex';
+  }
+
+  $('threshVal').textContent = threshold.toFixed(0) + '°C';
+
+  const now = new Date();
+  const timeStr = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0') + ':' + String(now.getSeconds()).padStart(2,'0');
+  $('lastTime').textContent = timeStr;
+
+  history.labels.push(timeStr);
+  history.sensor1.push(sensor1);
+  history.sensor2.push(sensor2);
+  history.ambient.push(ambient);
+
+  if (history.labels.length > MAX_POINTS) {
+    history.labels.shift();
+    history.sensor1.shift();
+    history.sensor2.shift();
+    history.ambient.shift();
+  }
+
+  $('chartPoints').textContent = history.labels.length + ' pts';
+  chart.update();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initChart();
+  // Simulate data every 1 second
+  setInterval(() => {
+    const data = simulateData();
+    updateUI(data);
+  }, 1000);
+});
+</script>
+</body>
+</html>
