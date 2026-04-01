@@ -528,9 +528,9 @@ function connectMQTT() {
   $('connText').textContent = 'Connecting...';
   $('connDot').classList.remove('live');
 
-  const client = mqtt.connect(BROKER_URL, {
-    username: MQTT_USER,
-    password: MQTT_PASS,
+  const client = mqtt.connect(c6a0b8ad187b42dc9ab038e5922a2eee.s1.eu.hivemq.cloud, {
+    username: ESP32,
+    password: MSTGrad2026!,
     clientId: 'thermalguard_' + Math.random().toString(16).slice(2, 8),
     clean: true,
     reconnectPeriod: 3000,
