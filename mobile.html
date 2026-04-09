@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ThermalGuard">
+<meta name="theme-color" content="#0b0f14">
+<title>ThermalGuard — Live Monitor</title>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap');
+  :root{--bg:#0b0f14;--surface:#131920;--surface2:#1a222c;--border:#232e3b;--text:#e4e8ed;--dim:#7a8a9e;--accent:#00d4aa;--ag:rgba(0,212,170,.15);--alert:#ff4d6a;--alg:rgba(255,77,106,.15);--s1:#00d4aa;--s2:#4da6ff;--s3:#a07cff;--amb:#ffa842}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;min-height:100vh;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  .mono{font-family:'IBM Plex Mono',monospace}
+
+  header{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);background:var(--surface)}
+  .logo{display:flex;align-items:center;gap:10px}
+  .logo-text{font-weight:600;font-size:15px;letter-spacing:-.3px}
+  .logo-text span{color:var(--dim);font-weight:400;font-size:11px;margin-left:6px}
+  .hr{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--dim)}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--dim);transition:background .3s}
+  .dot.connected{background:var(--accent);animation:pulse 2s infinite}
+  .dot.disconnected{background:var(--alert)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+  .conn-label{font-size:9px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;padding:3px 8px;border-radius:5px;white-space:nowrap}
+  .conn-ok{background:var(--ag);color:var(--accent)}
+  .conn-err{background:var(--alg);color:var(--alert)}
+
+  .badge{font-size:9px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;padding:3px 8px;border-radius:5px;white-space:nowrap}
+  .b-ok{background:var(--ag);color:var(--accent)}.b-al{background:var(--alg);color:var(--alert);animation:fl 1s infinite}.b-wait{background:var(--surface2);color:var(--dim)}
+  @keyframes fl{0%,100%{opacity:1}50%{opacity:.6}}
+
+  .main{max-width:956px;margin:0 auto;padding:0 16px 32px}
+  .bc{padding:12px 0;font-size:12px;color:var(--dim);display:flex;align-items:center;gap:8px}
+
+  .detail-top{margin-bottom:16px}
+  .dt{font-size:18px;font-weight:700;margin-bottom:4px}
+  .ds{font-size:11px;color:var(--dim)}
+
+  .summary-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px}
+  .sc{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center}
+  .sl{font-size:9px;text-transform:uppercase;letter-spacing:.7px;color:var(--dim);margin-bottom:4px}
+  .sv{font-size:20px;font-weight:700}
+
+  .cb{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:20px}
+  .cb h3{font-size:12px;font-weight:600;margin-bottom:12px}
+  .cw{position:relative;height:220px}
+
+  .sensor-detail-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  .sd-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center;position:relative;overflow:hidden}
+  .sd-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+  .sd-card.c1::before{background:var(--s1)}.sd-card.c2::before{background:var(--s2)}.sd-card.c3::before{background:var(--s3)}.sd-card.ca::before{background:var(--amb)}
+  .sd-label{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px}
+  .sd-temp{font-size:24px;font-weight:700;letter-spacing:-1px;margin-bottom:4px}
+  .sd-delta{font-size:11px;padding:3px 8px;border-radius:4px;display:inline-block}
+  .sd-delta.ok{background:var(--ag);color:var(--accent)}
+  .sd-delta.al{background:var(--alg);color:var(--alert)}
+  .sd-delta.ref{background:var(--surface2);color:var(--dim)}
+
+  #liveContent{display:none}
+  #waitingMsg{text-align:center;padding:80px 20px;color:var(--dim)}
+  #waitingMsg .wm-title{font-size:16px;font-weight:600;color:var(--text);margin-bottom:8px}
+  #waitingMsg .wm-sub{font-size:12px}
+
+  footer{padding:14px 16px;text-align:center;font-size:9px;color:var(--dim);border-top:1px solid var(--border);letter-spacing:1.5px;text-transform:uppercase;font-weight:500;margin-top:20px}
+
+  @media(max-width:380px){
+    .sensor-detail-grid{grid-template-columns:1fr}
+    .summary-row{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <div class="logo-text">ThermalGuard<span>Live</span></div>
+  </div>
+  <div class="hr">
+    <div class="dot" id="mqttDot"></div>
+    <span class="conn-label" id="connLabel">Connecting…</span>
+    <span class="mono" id="clk"></span>
+  </div>
+</header>
+
+<div class="main">
+  <div id="waitingMsg">
+    <div class="wm-title">Waiting for sensor data…</div>
+    <div class="wm-sub">Listening on <span class="mono">thermalguard/c3/data</span></div>
+  </div>
+
+  <div id="liveContent">
+    <div class="bc">Live Monitor — <span class="mono" id="connStatus">0 Alerts</span></div>
+
+    <div class="detail-top">
+      <div class="dt">Backshell Unit 1</div>
+      <div class="ds">BU-001 · Live MQTT Feed &nbsp;<span class="badge b-wait" id="statusBadge">OK</span></div>
+    </div>
+
+    <div class="summary-row">
+      <div class="sc"><div class="sl">Avg Delta</div><div class="sv mono" id="avgDelta">—</div></div>
+      <div class="sc"><div class="sl">Peak Delta</div><div class="sv mono" id="peakDelta">—</div></div>
+      <div class="sc"><div class="sl">Threshold</div><div class="sv mono" style="color:var(--dim)">30.0°C</div></div>
+    </div>
+
+    <div class="cb">
+      <h3>Live Temperature</h3>
+      <div class="cw"><canvas id="dc"></canvas></div>
+    </div>
+
+    <div style="font-size:12px;font-weight:600;margin-bottom:10px">Sensor Readings</div>
+    <div class="sensor-detail-grid">
+      <div class="sd-card c1">
+        <div class="sd-label">Monitor 1</div>
+        <div class="sd-temp mono" id="temp1" style="color:var(--s1)">—</div>
+        <div class="sd-delta ref mono" id="delta1">Δ —</div>
+      </div>
+      <div class="sd-card c2">
+        <div class="sd-label">Monitor 2</div>
+        <div class="sd-temp mono" id="temp2" style="color:var(--s2)">—</div>
+        <div class="sd-delta ref mono" id="delta2">Δ —</div>
+      </div>
+      <div class="sd-card c3">
+        <div class="sd-label">Monitor 3</div>
+        <div class="sd-temp mono" id="temp3" style="color:var(--s3)">—</div>
+        <div class="sd-delta ref mono" id="delta3">Δ —</div>
+      </div>
+      <div class="sd-card ca">
+        <div class="sd-label">Ambient</div>
+        <div class="sd-temp mono" id="tempAmb" style="color:var(--amb)">—</div>
+        <div class="sd-delta ref mono">Reference</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>AUSTIN BURRIS &nbsp;✕&nbsp; THERMALGUARD ENGINEERING &nbsp;✕&nbsp; POSITRONIC</footer>
+
+<script>
+var MQTT_URL   = 'wss://c6a0b8ad187b42dc9ab038e5922a2eee.s1.eu.hivemq.cloud:8884/mqtt';
+var MQTT_USER  = 'ESP32';
+var MQTT_PASS  = 'MSTGrad2026!';
+var TOPIC      = 'thermalguard/c3/data';
+var THRESHOLD  = 30.0;
+var MAX_POINTS = 120;
+
+var peakDeltaVal = 0;
+var hist = { labels: [], t1: [], t2: [], t3: [], am: [] };
+var chart = null;
+var firstMsg = false;
+
+var $ = function(id) { return document.getElementById(id); };
+
+setInterval(function() { $('clk').textContent = new Date().toLocaleTimeString(); }, 1000);
+
+function initChart() {
+  chart = new Chart($('dc'), {
+    type: 'line',
+    data: {
+      labels: hist.labels,
+      datasets: [
+        { label: 'Monitor 1', data: hist.t1, borderColor: '#00d4aa', borderWidth: 2, pointRadius: 0, tension: .3, fill: false },
+        { label: 'Monitor 2', data: hist.t2, borderColor: '#4da6ff', borderWidth: 2, pointRadius: 0, tension: .3, fill: false },
+        { label: 'Monitor 3', data: hist.t3, borderColor: '#a07cff', borderWidth: 2, pointRadius: 0, tension: .3, fill: false },
+        { label: 'Ambient',   data: hist.am, borderColor: '#ffa842', borderWidth: 2, borderDash: [6, 3], pointRadius: 0, tension: .3, fill: false },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false, spanGaps: true,
+      scales: {
+        x: { ticks: { color: '#7a8a9e', font: { size: 9 }, maxTicksLimit: 6 }, grid: { color: 'rgba(35,46,59,.5)' } },
+        y: { ticks: { color: '#7a8a9e', font: { size: 9 }, callback: function(v) { return v.toFixed(0) + '°C'; } }, grid: { color: 'rgba(35,46,59,.5)' } }
+      },
+      plugins: {
+        legend: { labels: { color: '#7a8a9e', usePointStyle: true, pointStyle: 'circle', padding: 12, font: { size: 10 } } },
+        tooltip: { backgroundColor: '#1a222c', titleColor: '#e4e8ed', bodyColor: '#e4e8ed', borderColor: '#232e3b', borderWidth: 1,
+          callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(2) + '°C'; } }
+        }
+      }
+    }
+  });
+}
+
+function handleMessage(payload) {
+  var d;
+  try { d = JSON.parse(payload); } catch (e) { return; }
+
+  var amb = parseFloat(d.ambient);
+  var m1  = parseFloat(d.monitor1);
+  var m2  = parseFloat(d.monitor2);
+  var m3  = (d.monitor3 !== undefined && d.monitor3 !== null) ? parseFloat(d.monitor3) : null;
+  var status = d.status || 'UNKNOWN';
+
+  if (isNaN(amb) || isNaN(m1) || isNaN(m2)) return;
+
+  if (!firstMsg) {
+    firstMsg = true;
+    $('waitingMsg').style.display = 'none';
+    $('liveContent').style.display = 'block';
+    initChart();
+  }
+
+  var now = new Date().toLocaleTimeString();
+  var d1 = m1 - amb;
+  var d2 = m2 - amb;
+  var d3 = (m3 !== null && !isNaN(m3)) ? (m3 - amb) : null;
+
+  var deltas = [d1, d2];
+  if (d3 !== null) deltas.push(d3);
+
+  var avgD = deltas.reduce(function(a, b) { return a + b; }, 0) / deltas.length;
+  var maxD = Math.max.apply(null, deltas);
+  if (maxD > peakDeltaVal) peakDeltaVal = maxD;
+
+  var isAlert = (status === 'ALERT') || deltas.some(function(v) { return v >= THRESHOLD; });
+
+  $('avgDelta').textContent = avgD.toFixed(1) + '°C';
+  $('avgDelta').style.color = isAlert ? 'var(--alert)' : 'var(--accent)';
+  $('peakDelta').textContent = peakDeltaVal.toFixed(1) + '°C';
+  $('peakDelta').style.color = peakDeltaVal >= THRESHOLD ? 'var(--alert)' : 'var(--text)';
+
+  $('statusBadge').textContent = isAlert ? 'ALERT' : 'OK';
+  $('statusBadge').className = 'badge ' + (isAlert ? 'b-al' : 'b-ok');
+  $('connStatus').textContent = isAlert ? '1 Alert' : '0 Alerts';
+
+  $('temp1').textContent = m1.toFixed(1) + '°C';
+  $('delta1').textContent = 'Δ ' + d1.toFixed(1) + '°C';
+  $('delta1').className = 'sd-delta mono ' + (d1 >= THRESHOLD ? 'al' : 'ok');
+
+  $('temp2').textContent = m2.toFixed(1) + '°C';
+  $('delta2').textContent = 'Δ ' + d2.toFixed(1) + '°C';
+  $('delta2').className = 'sd-delta mono ' + (d2 >= THRESHOLD ? 'al' : 'ok');
+
+  if (m3 !== null && !isNaN(m3)) {
+    $('temp3').textContent = m3.toFixed(1) + '°C';
+    $('delta3').textContent = 'Δ ' + d3.toFixed(1) + '°C';
+    $('delta3').className = 'sd-delta mono ' + (d3 >= THRESHOLD ? 'al' : 'ok');
+  } else {
+    $('temp3').textContent = '—';
+    $('delta3').textContent = 'No data';
+    $('delta3').className = 'sd-delta ref mono';
+  }
+
+  $('tempAmb').textContent = amb.toFixed(1) + '°C';
+
+  hist.labels.push(now);
+  hist.t1.push(m1);
+  hist.t2.push(m2);
+  hist.t3.push((m3 !== null && !isNaN(m3)) ? m3 : null);
+  hist.am.push(amb);
+  if (hist.labels.length > MAX_POINTS) {
+    hist.labels.shift(); hist.t1.shift(); hist.t2.shift(); hist.t3.shift(); hist.am.shift();
+  }
+  chart.update('none');
+}
+
+function connectMQTT() {
+  var client = mqtt.connect(MQTT_URL, {
+    username: MQTT_USER,
+    password: MQTT_PASS,
+    reconnectPeriod: 5000,
+    connectTimeout: 10000,
+  });
+
+  client.on('connect', function() {
+    $('mqttDot').className = 'dot connected';
+    $('connLabel').textContent = 'Connected';
+    $('connLabel').className = 'conn-label conn-ok';
+    client.subscribe(TOPIC);
+  });
+
+  client.on('message', function(topic, msg) {
+    if (topic === TOPIC) handleMessage(msg.toString());
+  });
+
+  client.on('error', function() {
+    $('mqttDot').className = 'dot disconnected';
+    $('connLabel').textContent = 'Error';
+    $('connLabel').className = 'conn-label conn-err';
+  });
+
+  client.on('offline', function() {
+    $('mqttDot').className = 'dot disconnected';
+    $('connLabel').textContent = 'Offline';
+    $('connLabel').className = 'conn-label conn-err';
+  });
+
+  client.on('reconnect', function() {
+    $('mqttDot').className = 'dot';
+    $('connLabel').textContent = 'Reconnecting…';
+    $('connLabel').className = 'conn-label';
+  });
+}
+
+connectMQTT();
+</script>
+</body>
+</html>
